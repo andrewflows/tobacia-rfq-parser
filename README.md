@@ -1,4 +1,4 @@
-# RFQ Parser — AI-Powered Industrial Quote Extraction
+# Frontier — Stop transcribing. Start quoting.
 
 ## The Problem
 
@@ -8,7 +8,7 @@ Industrial procurement still relies on PDF-based RFQs (Requests for Quote) sent 
 
 This tool uses AI to parse unstructured RFQ documents into clean, structured data in seconds. Upload a PDF, get a structured table of line items with descriptions, quantities, specs, and manufacturer preferences — ready for downstream quoting systems.
 
-**Live demo:** [tobacia.space/rfq-parser](https://tobacia.space/rfq-parser)
+**Live demo:** [tobacia.space/rfq-parser](https://tobacia.space/rfq-parser) — Frontier by Andres Tobacia
 
 ## Architecture
 
