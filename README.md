@@ -21,7 +21,7 @@ FastAPI Backend (this repo, hosted on Render)
   ├── Extract text: pdfplumber (in memory, never stored)
   │
   ▼
-Claude API (Anthropic)
+LLM API (NLP extraction)
   ├── System prompt anchored against injection
   ├── Structured JSON extraction
   ├── Response schema validation
@@ -36,7 +36,7 @@ Browser (renders table + CSV export)
 |-----------|-----------|-----|
 | Backend | Python + FastAPI | pdfplumber (best PDF text extraction) is Python-only. FastAPI provides async handling. |
 | PDF Parsing | pdfplumber | Extracts text without executing embedded content. Processes in memory. |
-| AI | Claude API (Anthropic) | Structured extraction with schema-constrained output. |
+| AI | LLM API (NLP extraction) | Structured extraction with schema-constrained output. |
 | Frontend | HTML + Tailwind + vanilla JS | Minimal. One form, one table. No framework needed. |
 | Hosting | Render (backend) + GitHub Pages (frontend) | Free tier. Backend sleeps when idle. |
 
@@ -54,8 +54,8 @@ Browser (renders table + CSV export)
 
 1. **No auth, no database** — Eliminates entire categories of vulnerabilities (SQL injection, session hijacking, credential storage). A demo should be stateless.
 2. **Python over Node** — pdfplumber is the best PDF extraction library available and it's Python-only. Industrial/supply chain tools naturally live in the Python ecosystem.
-3. **Schema-constrained AI output** — Claude extracts to a fixed JSON schema. Response is validated before reaching the frontend. Malformed responses are rejected.
-4. **In-memory processing** — PDFs never touch disk. Processed, sent to Claude, result returned, data discarded.
+3. **Schema-constrained AI output** — The LLM extracts to a fixed JSON schema. Response is validated before reaching the frontend. Malformed responses are rejected.
+4. **In-memory processing** — PDFs never touch disk. Processed, sent to the LLM, result returned, data discarded.
 
 ## Local Development
 
@@ -71,7 +71,7 @@ pip install -r requirements.txt
 
 # Configure
 cp .env.example .env
-# Edit .env with your Anthropic API key
+# Edit .env with your LLM API key
 
 # Run
 uvicorn main:app --reload --port 8000

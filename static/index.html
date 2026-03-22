@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RFQ Parser — Andres Tobacia</title>
+  <meta name="description" content="AI-powered RFQ parser for industrial distribution. Upload a PDF, get structured quote data in seconds.">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            navy: '#0a1628',
+            'navy-light': '#111d33',
+            'navy-card': '#162033',
+            accent: '#3b82f6',
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body { background: #0a1628; }
+    .drop-zone.dragover { border-color: #3b82f6; background: rgba(59,130,246,0.08); }
+    .fade-in { animation: fadeIn 0.3s ease-in; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+    .spinner { border: 3px solid rgba(255,255,255,0.1); border-top-color: #3b82f6; border-radius: 50%; width: 20px; height: 20px; animation: spin 0.8s linear infinite; display: inline-block; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    details summary { cursor: pointer; }
+    details summary::-webkit-details-marker { display: none; }
+  </style>
+</head>
+<body class="text-gray-200 min-h-screen">
+
+  <!-- Nav -->
+  <nav class="border-b border-gray-800 px-6 py-3 flex items-center justify-between">
+    <a href="https://tobacia.space" class="text-sm text-gray-400 hover:text-white transition">&larr; tobacia.space</a>
+    <span class="text-sm font-semibold text-blue-400">RFQ Parser Demo</span>
+  </nav>
+
+  <!-- Header -->
+  <header class="max-w-5xl mx-auto px-4 pt-10 pb-6 text-center">
+    <h1 class="text-2xl sm:text-3xl font-bold text-white mb-3">AI-Powered RFQ Parser</h1>
+    <p class="text-gray-400 max-w-2xl mx-auto text-sm sm:text-base">
+      Industrial procurement still runs on PDF emails and manual data entry.
+      This tool extracts structured line items from RFQ documents in seconds — using AI that understands industrial specifications.
+    </p>
+  </header>
+
+  <!-- Main -->
+  <main class="max-w-5xl mx-auto px-4 pb-12">
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+
+      <!-- Left: Upload -->
+      <div class="bg-navy-card border border-gray-700 rounded-xl p-6">
+        <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">Input</h2>
+
+        <div id="dropZone" class="drop-zone border-2 border-dashed border-gray-600 rounded-lg p-8 text-center cursor-pointer hover:border-blue-500 transition">
+          <div id="dropContent">
+            <svg class="mx-auto mb-3 w-10 h-10 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
+            </svg>
+            <p class="text-gray-400 text-sm">Drop a PDF here or <span class="text-blue-400 underline">click to upload</span></p>
+            <p class="text-gray-600 text-xs mt-1">PDF only, max 10MB</p>
+          </div>
+          <div id="fileInfo" class="hidden">
+            <p class="text-blue-300 text-sm font-medium" id="fileName"></p>
+            <p class="text-gray-500 text-xs mt-1" id="fileSize"></p>
+            <button onclick="clearFile(event)" class="mt-2 text-xs text-red-400 hover:text-red-300">Remove</button>
+          </div>
+        </div>
+        <input type="file" id="fileInput" accept=".pdf" class="hidden">
+
+        <div class="flex gap-3 mt-4">
+          <button onclick="parseRFQ()" id="parseBtn" disabled class="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 disabled:text-gray-500 text-white font-semibold py-2.5 px-4 rounded-lg transition text-sm">
+            Parse RFQ
+          </button>
+          <button onclick="loadSample()" id="sampleBtn" class="flex-1 border border-gray-600 hover:border-blue-500 text-gray-300 hover:text-white py-2.5 px-4 rounded-lg transition text-sm">
+            Try with Sample
+          </button>
+        </div>
+
+        <!-- Status -->
+        <div id="status" class="mt-4 hidden">
+          <div class="flex items-center gap-2 text-sm">
+            <div class="spinner"></div>
+            <span id="statusText" class="text-gray-400">Processing...</span>
+          </div>
+        </div>
+
+        <!-- Error -->
+        <div id="error" class="mt-4 hidden bg-red-900/30 border border-red-800 rounded-lg p-3">
+          <p class="text-red-300 text-sm" id="errorText"></p>
+        </div>
+      </div>
+
+      <!-- Right: Results -->
+      <div class="bg-navy-card border border-gray-700 rounded-xl p-6">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="text-sm font-semibold text-gray-400 uppercase tracking-wider">Output</h2>
+          <button onclick="downloadCSV()" id="csvBtn" class="hidden text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 py-1.5 px-3 rounded transition">
+            Download CSV
+          </button>
+        </div>
+
+        <div id="placeholder" class="text-center py-12">
+          <p class="text-gray-600 text-sm">Parsed results will appear here</p>
+        </div>
+
+        <!-- Metadata -->
+        <div id="metadata" class="hidden mb-4 fade-in">
+          <div class="bg-navy/50 rounded-lg p-3 text-xs space-y-1" id="metadataContent"></div>
+        </div>
+
+        <!-- Results Table -->
+        <div id="results" class="hidden fade-in overflow-x-auto">
+          <table class="w-full text-xs">
+            <thead>
+              <tr class="border-b border-gray-700 text-gray-400">
+                <th class="text-left py-2 px-2">#</th>
+                <th class="text-left py-2 px-2">Description</th>
+                <th class="text-left py-2 px-2">Qty</th>
+                <th class="text-left py-2 px-2">Unit</th>
+                <th class="text-left py-2 px-2">Specs</th>
+                <th class="text-left py-2 px-2">Mfr</th>
+              </tr>
+            </thead>
+            <tbody id="tableBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- How It Works -->
+    <div class="mt-8">
+      <details class="bg-navy-card border border-gray-700 rounded-xl">
+        <summary class="px-6 py-4 text-sm font-semibold text-gray-300 hover:text-white transition flex items-center justify-between">
+          <span>How it works — Architecture & Technical Deep-Dive</span>
+          <svg class="w-4 h-4 text-gray-500 transform transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+          </svg>
+        </summary>
+        <div class="px-6 pb-6 text-sm text-gray-400 space-y-4">
+          <h3 class="text-white font-semibold">The Problem</h3>
+          <p>Industrial procurement still relies heavily on PDF-based RFQs sent via email. A single RFQ can contain dozens of line items with part numbers, specifications, quantities, and delivery requirements — all in inconsistent formats across different companies. Procurement teams spend hours manually transcribing this data into quoting systems, introducing errors that can cascade into costly mistakes. A unit-of-measure mismatch on a valve order can mean a $50,000 error.</p>
+
+          <h3 class="text-white font-semibold">The Solution</h3>
+          <p>This tool uses AI to parse unstructured RFQ documents into clean, structured data in seconds. It handles varying formats, extracts metadata and line items, and returns everything in a standardized schema ready for downstream systems.</p>
+
+          <h3 class="text-white font-semibold">Architecture</h3>
+          <pre class="bg-navy rounded-lg p-4 text-xs text-gray-400 overflow-x-auto">
+Browser (upload PDF)
+  │
+  ▼
+FastAPI Backend (Python)
+  ├── Validate: file type, size, magic bytes
+  ├── Extract text: pdfplumber (in memory, never stored)
+  ├── Validate: page count, text length
+  │
+  ▼
+LLM API (NLP Extraction)
+  ├── System prompt anchored against injection
+  ├── Structured extraction with JSON schema
+  ├── Response validation before returning
+  │
+  ▼
+Browser (render table + CSV export)</pre>
+
+          <h3 class="text-white font-semibold">Key Technical Decisions</h3>
+          <ul class="list-disc list-inside space-y-1">
+            <li><strong>Python + FastAPI</strong> — pdfplumber is the best PDF text extraction library available, and it's Python-only. FastAPI gives us async handling and auto-generated API docs.</li>
+            <li><strong>Stateless design</strong> — No database, no user accounts, no file storage. PDFs are processed in memory and immediately discarded. This eliminates entire categories of security vulnerabilities.</li>
+            <li><strong>Prompt engineering</strong> — The system prompt is anchored to treat all document text as data, not instructions. This mitigates prompt injection via malicious PDF content.</li>
+            <li><strong>Schema validation</strong> — The AI response is validated against an expected JSON structure before being returned to the frontend. Malformed responses are rejected.</li>
+          </ul>
+
+          <h3 class="text-white font-semibold">Security</h3>
+          <ul class="list-disc list-inside space-y-1">
+            <li>PDF magic byte validation + 10MB file size limit</li>
+            <li>50-page and 100KB text extraction limits</li>
+            <li>30-second processing timeout</li>
+            <li>Rate limiting: 10 requests/hour per IP, 100/day global</li>
+            <li>API keys server-side only, never exposed to browser</li>
+            <li>CORS restricted to demo subdomain</li>
+          </ul>
+
+          <h3 class="text-white font-semibold">About</h3>
+          <p>Built by <a href="https://tobacia.space" class="text-blue-400 hover:underline">Andres Tobacia</a> — Industrial Engineer with 17+ years in manufacturing, supply chain, and space exploration. This demo combines deep domain expertise in industrial procurement with applied AI to solve a real operational pain point.</p>
+          <p class="text-xs text-gray-600 mt-2">Uploaded files are processed in memory and immediately discarded. No data is stored. AI processing powered by a large language model API. No training is performed on uploaded data.</p>
+        </div>
+      </details>
+    </div>
+  </main>
+
+<script>
+// API backend URL — update this after deploying to Render/Fly.io
+const API_BASE = window.API_BASE || 'https://tobacia-rfq-parser.onrender.com';
+let selectedFile = null;
+let parsedData = null;
+
+// --- Drop Zone ---
+const dropZone = document.getElementById('dropZone');
+const fileInput = document.getElementById('fileInput');
+
+dropZone.addEventListener('click', () => fileInput.click());
+dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('dragover'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+dropZone.addEventListener('drop', (e) => {
+  e.preventDefault();
+  dropZone.classList.remove('dragover');
+  const file = e.dataTransfer.files[0];
+  if (file) handleFile(file);
+});
+fileInput.addEventListener('change', (e) => { if (e.target.files[0]) handleFile(e.target.files[0]); });
+
+function handleFile(file) {
+  if (file.type !== 'application/pdf') {
+    showError('Please upload a PDF file.');
+    return;
+  }
+  if (file.size > 10 * 1024 * 1024) {
+    showError('File too large. Maximum 10MB.');
+    return;
+  }
+  selectedFile = file;
+  document.getElementById('dropContent').classList.add('hidden');
+  document.getElementById('fileInfo').classList.remove('hidden');
+  document.getElementById('fileName').textContent = file.name;
+  document.getElementById('fileSize').textContent = (file.size / 1024).toFixed(1) + ' KB';
+  document.getElementById('parseBtn').disabled = false;
+  hideError();
+}
+
+function clearFile(e) {
+  e.stopPropagation();
+  selectedFile = null;
+  fileInput.value = '';
+  document.getElementById('dropContent').classList.remove('hidden');
+  document.getElementById('fileInfo').classList.add('hidden');
+  document.getElementById('parseBtn').disabled = true;
+}
+
+// --- Parse ---
+async function parseRFQ() {
+  if (!selectedFile) return;
+
+  const parseBtn = document.getElementById('parseBtn');
+  const sampleBtn = document.getElementById('sampleBtn');
+  parseBtn.disabled = true;
+  sampleBtn.disabled = true;
+  parseBtn.textContent = 'Parsing...';
+  hideError();
+  showStatus('Uploading PDF...');
+  hideResults();
+
+  const formData = new FormData();
+  formData.append('file', selectedFile);
+
+  try {
+    updateStatus('Extracting text from PDF...');
+    const response = await fetch(`${API_BASE}/api/parse-rfq`, {
+      method: 'POST',
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({ detail: 'Unknown error' }));
+      throw new Error(err.detail || `Error ${response.status}`);
+    }
+
+    updateStatus('Structuring line items...');
+    const data = await response.json();
+    parsedData = data;
+
+    hideStatus();
+    renderResults(data);
+  } catch (err) {
+    hideStatus();
+    showError(err.message);
+  } finally {
+    parseBtn.disabled = false;
+    sampleBtn.disabled = false;
+    parseBtn.textContent = 'Parse RFQ';
+  }
+}
+
+// --- Sample ---
+async function loadSample() {
+  const sampleBtn = document.getElementById('sampleBtn');
+  const parseBtn = document.getElementById('parseBtn');
+  sampleBtn.disabled = true;
+  parseBtn.disabled = true;
+  hideError();
+  showStatus('Loading sample RFQ...');
+  hideResults();
+
+  try {
+    const res = await fetch(`/samples/sample-rfq.pdf`);
+    if (!res.ok) throw new Error('Sample file not found');
+    const blob = await res.blob();
+    const file = new File([blob], 'sample-rfq.pdf', { type: 'application/pdf' });
+    selectedFile = file;
+
+    document.getElementById('dropContent').classList.add('hidden');
+    document.getElementById('fileInfo').classList.remove('hidden');
+    document.getElementById('fileName').textContent = 'sample-rfq.pdf (Sample)';
+    document.getElementById('fileSize').textContent = (file.size / 1024).toFixed(1) + ' KB';
+
+    updateStatus('Extracting text from PDF...');
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const response = await fetch(`${API_BASE}/api/parse-rfq`, {
+      method: 'POST',
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({ detail: 'Unknown error' }));
+      throw new Error(err.detail || `Error ${response.status}`);
+    }
+
+    updateStatus('Structuring line items...');
+    const data = await response.json();
+    parsedData = data;
+
+    hideStatus();
+    renderResults(data);
+  } catch (err) {
+    hideStatus();
+    showError(err.message);
+  } finally {
+    sampleBtn.disabled = false;
+    parseBtn.disabled = false;
+  }
+}
+
+// --- Render ---
+function renderResults(data) {
+  document.getElementById('placeholder').classList.add('hidden');
+
+  // Metadata
+  const meta = data.rfq_metadata || {};
+  const metaDiv = document.getElementById('metadataContent');
+  metaDiv.innerHTML = '';
+  const fields = [
+    ['Company', meta.company_name],
+    ['RFQ #', meta.rfq_number],
+    ['Date', meta.date],
+    ['Contact', meta.contact],
+    ['Delivery', meta.delivery_location],
+    ['Notes', meta.notes],
+  ];
+  fields.forEach(([label, value]) => {
+    if (value) {
+      metaDiv.innerHTML += `<div><span class="text-gray-500">${label}:</span> <span class="text-gray-300">${escapeHtml(value)}</span></div>`;
+    }
+  });
+  if (metaDiv.innerHTML) {
+    document.getElementById('metadata').classList.remove('hidden');
+  }
+
+  // Table
+  const tbody = document.getElementById('tableBody');
+  tbody.innerHTML = '';
+  const items = data.items || [];
+
+  if (items.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="6" class="py-4 text-center text-gray-500">No line items found</td></tr>';
+  } else {
+    items.forEach((item, i) => {
+      const row = document.createElement('tr');
+      row.className = 'border-b border-gray-800 hover:bg-navy-light/50';
+      row.innerHTML = `
+        <td class="py-2 px-2 text-gray-500">${escapeHtml(item.line || String(i + 1))}</td>
+        <td class="py-2 px-2 text-gray-200">${escapeHtml(item.description || '')}</td>
+        <td class="py-2 px-2">${escapeHtml(item.quantity || '')}</td>
+        <td class="py-2 px-2">${escapeHtml(item.unit || '')}</td>
+        <td class="py-2 px-2 text-gray-400">${escapeHtml(item.specs || '')}</td>
+        <td class="py-2 px-2 text-gray-400">${escapeHtml(item.manufacturer || '')}</td>
+      `;
+      tbody.appendChild(row);
+    });
+  }
+
+  document.getElementById('results').classList.remove('hidden');
+  document.getElementById('csvBtn').classList.remove('hidden');
+}
+
+// --- CSV ---
+function downloadCSV() {
+  if (!parsedData || !parsedData.items) return;
+  const headers = ['Line', 'Description', 'Quantity', 'Unit', 'Specs', 'Manufacturer', 'Notes'];
+  const rows = parsedData.items.map(item => [
+    item.line || '', item.description || '', item.quantity || '',
+    item.unit || '', item.specs || '', item.manufacturer || '', item.notes || ''
+  ]);
+
+  let csv = headers.join(',') + '\n';
+  rows.forEach(row => {
+    csv += row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',') + '\n';
+  });
+
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'rfq-parsed.csv';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// --- Helpers ---
+function showStatus(text) { document.getElementById('status').classList.remove('hidden'); document.getElementById('statusText').textContent = text; }
+function updateStatus(text) { document.getElementById('statusText').textContent = text; }
+function hideStatus() { document.getElementById('status').classList.add('hidden'); }
+function showError(text) { document.getElementById('error').classList.remove('hidden'); document.getElementById('errorText').textContent = text; }
+function hideError() { document.getElementById('error').classList.add('hidden'); }
+function hideResults() {
+  document.getElementById('results').classList.add('hidden');
+  document.getElementById('metadata').classList.add('hidden');
+  document.getElementById('csvBtn').classList.add('hidden');
+  document.getElementById('placeholder').classList.remove('hidden');
+}
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+</script>
+</body>
+</html>
