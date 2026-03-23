@@ -145,35 +145,37 @@ async def call_claude(text: str) -> dict:
     if not api_key:
         raise HTTPException(status_code=500, detail="API key not configured.")
 
-    try:
-        client = anthropic.Anthropic(api_key=api_key)
-        message = client.messages.create(
-            model="claude-sonnet-4-20250514",
-            max_tokens=4096,
-            system=SYSTEM_PROMPT,
-            messages=[
-                {
-                    "role": "user",
-                    "content": f"Parse the following RFQ document and extract all line items:\n\n{text}",
-                }
-            ],
-        )
-    except anthropic.NotFoundError:
-        # Model not available, try fallback
-        client = anthropic.Anthropic(api_key=api_key)
-        message = client.messages.create(
-            model="claude-3-5-sonnet-20241022",
-            max_tokens=4096,
-            system=SYSTEM_PROMPT,
-            messages=[
-                {
-                    "role": "user",
-                    "content": f"Parse the following RFQ document and extract all line items:\n\n{text}",
-                }
-            ],
-        )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"AI service error. Please try again.")
+    client = anthropic.Anthropic(api_key=api_key)
+    models = ["claude-sonnet-4-20250514", "claude-3-5-sonnet-20241022"]
+    last_error = None
+
+    for model in models:
+        try:
+            message = client.messages.create(
+                model=model,
+                max_tokens=4096,
+                system=SYSTEM_PROMPT,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": f"Parse the following RFQ document and extract all line items:\n\n{text}",
+                    }
+                ],
+            )
+            break
+        except anthropic.NotFoundError:
+            last_error = f"Model {model} not available"
+            continue
+        except anthropic.BadRequestError as e:
+            raise HTTPException(status_code=500, detail=f"API error: {e.message}")
+        except anthropic.AuthenticationError:
+            raise HTTPException(status_code=500, detail="API authentication failed. Check API key.")
+        except anthropic.RateLimitError:
+            raise HTTPException(status_code=429, detail="AI service rate limit reached. Try again in a minute.")
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"AI service error: {type(e).__name__}")
+    else:
+        raise HTTPException(status_code=500, detail=f"No available AI model. {last_error}")
 
     response_text = message.content[0].text
 
