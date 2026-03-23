@@ -141,19 +141,39 @@ OUTPUT SCHEMA:
 
 
 async def call_claude(text: str) -> dict:
-    client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+    api_key = os.getenv("ANTHROPIC_API_KEY")
+    if not api_key:
+        raise HTTPException(status_code=500, detail="API key not configured.")
 
-    message = client.messages.create(
-        model="claude-sonnet-4-20250514",
-        max_tokens=4096,
-        system=SYSTEM_PROMPT,
-        messages=[
-            {
-                "role": "user",
-                "content": f"Parse the following RFQ document and extract all line items:\n\n{text}",
-            }
-        ],
-    )
+    try:
+        client = anthropic.Anthropic(api_key=api_key)
+        message = client.messages.create(
+            model="claude-sonnet-4-20250514",
+            max_tokens=4096,
+            system=SYSTEM_PROMPT,
+            messages=[
+                {
+                    "role": "user",
+                    "content": f"Parse the following RFQ document and extract all line items:\n\n{text}",
+                }
+            ],
+        )
+    except anthropic.NotFoundError:
+        # Model not available, try fallback
+        client = anthropic.Anthropic(api_key=api_key)
+        message = client.messages.create(
+            model="claude-3-5-sonnet-20241022",
+            max_tokens=4096,
+            system=SYSTEM_PROMPT,
+            messages=[
+                {
+                    "role": "user",
+                    "content": f"Parse the following RFQ document and extract all line items:\n\n{text}",
+                }
+            ],
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"AI service error. Please try again.")
 
     response_text = message.content[0].text
 
