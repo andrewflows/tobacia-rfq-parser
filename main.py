@@ -88,7 +88,7 @@ async def call_llm(system_prompt: str, user_message: str) -> dict:
         raise HTTPException(status_code=500, detail="API key not configured.")
 
     client = anthropic.Anthropic(api_key=api_key)
-    models = ["claude-sonnet-4-20250514", "claude-3-5-sonnet-20241022"]
+    models = ["claude-sonnet-4-6-20250514", "claude-sonnet-4-20250514", "claude-3-5-sonnet-20241022"]
     last_error = None
 
     for model in models:
@@ -322,5 +322,6 @@ async def risk_monitor(request: Request, body: SupplierListInput):
 # ========================================================================
 
 @app.get("/api/health")
+@app.get("/health")
 async def health():
     return {"status": "ok", "tools": ["frontier", "pathfinder", "watchtower"]}
