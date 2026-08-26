@@ -81,6 +81,47 @@ def extract_text_from_pdf(content: bytes) -> str:
         raise HTTPException(status_code=400, detail="Could not read PDF. File may be corrupted.")
 
 
+# Model is resolved automatically from the Anthropic Models API so the apps
+# never pin an ID that later gets retired (which broke Frontier twice).
+# Preference picks the newest model in a cost-sane tier for extraction; override
+# the order with LLM_MODEL_TIER (e.g. "opus,sonnet") or the last-resort model
+# with LLM_MODEL_FALLBACK.
+_MODEL_TTL = 3600  # re-resolve the latest model at most once an hour
+_model_cache = {"id": None, "ts": 0.0}
+
+
+def resolve_latest_model(client: "anthropic.Anthropic") -> str:
+    """Return the newest available model ID, preferring a sensible tier."""
+    now = time.time()
+    if _model_cache["id"] and now - _model_cache["ts"] < _MODEL_TTL:
+        return _model_cache["id"]
+
+    tiers = [t.strip().lower() for t in os.getenv("LLM_MODEL_TIER", "sonnet,haiku,opus").split(",") if t.strip()]
+    try:
+        models = list(client.models.list())
+        # Newest first (created_at as ISO string sorts chronologically).
+        models.sort(key=lambda m: str(getattr(m, "created_at", "")), reverse=True)
+        chosen = None
+        for tier in tiers:
+            for m in models:
+                if tier in m.id.lower():
+                    chosen = m.id
+                    break
+            if chosen:
+                break
+        if not chosen and models:
+            chosen = models[0].id
+        if chosen:
+            _model_cache["id"] = chosen
+            _model_cache["ts"] = now
+            return chosen
+    except Exception:
+        pass
+
+    # API unreachable — reuse the last good pick, else a static fallback.
+    return _model_cache["id"] or os.getenv("LLM_MODEL_FALLBACK", "claude-sonnet-5")
+
+
 async def call_llm(system_prompt: str, user_message: str) -> dict:
     """Shared LLM caller for all tools."""
     api_key = os.getenv("ANTHROPIC_API_KEY")
@@ -88,33 +129,40 @@ async def call_llm(system_prompt: str, user_message: str) -> dict:
         raise HTTPException(status_code=500, detail="API key not configured.")
 
     client = anthropic.Anthropic(api_key=api_key)
-    models = ["claude-sonnet-5", "claude-haiku-4-5"]
-    last_error = None
+    model = resolve_latest_model(client)
 
-    for model in models:
+    def _create(model_id: str):
+        return client.messages.create(
+            model=model_id,
+            max_tokens=4096,
+            system=system_prompt,
+            messages=[{"role": "user", "content": user_message}],
+        )
+
+    try:
         try:
-            message = client.messages.create(
-                model=model,
-                max_tokens=4096,
-                system=system_prompt,
-                messages=[{"role": "user", "content": user_message}],
-            )
-            break
+            message = _create(model)
         except anthropic.NotFoundError:
-            last_error = f"Model {model} not available"
-            continue
-        except anthropic.BadRequestError as e:
-            raise HTTPException(status_code=500, detail=f"API error: {e.message}")
-        except anthropic.AuthenticationError:
-            raise HTTPException(status_code=500, detail="API authentication failed. Check API key.")
-        except anthropic.RateLimitError:
-            raise HTTPException(status_code=429, detail="AI service rate limit reached. Try again in a minute.")
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"AI service error: {type(e).__name__}")
-    else:
-        raise HTTPException(status_code=500, detail=f"No available AI model. {last_error}")
+            # Cached model was retired — force a fresh resolve and retry once.
+            _model_cache["id"] = None
+            model = resolve_latest_model(client)
+            message = _create(model)
+    except anthropic.NotFoundError:
+        raise HTTPException(status_code=500, detail="No available AI model.")
+    except anthropic.BadRequestError as e:
+        raise HTTPException(status_code=500, detail=f"API error: {e.message}")
+    except anthropic.AuthenticationError:
+        raise HTTPException(status_code=500, detail="API authentication failed. Check API key.")
+    except anthropic.RateLimitError:
+        raise HTTPException(status_code=429, detail="AI service rate limit reached. Try again in a minute.")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"AI service error: {type(e).__name__}")
 
-    response_text = message.content[0].text
+    # Concatenate text blocks only — newer models can return thinking blocks
+    # first, so content[0] is not guaranteed to be text.
+    response_text = "".join(
+        b.text for b in message.content if getattr(b, "type", None) == "text"
+    )
     if "```json" in response_text:
         response_text = response_text.split("```json")[1].split("```")[0]
     elif "```" in response_text:
